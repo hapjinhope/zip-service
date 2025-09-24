@@ -71,33 +71,53 @@ def create_zip():
 
         logging.info(f"Archive created: {len(archive_data)} bytes")
 
-        # Загружаем на file.io
-        files_payload = {
-            'file': (archive_name, io.BytesIO(archive_data), 'application/zip')
-        }
+        # Пытаемся загрузить на file.io
+        try:
+            logging.info("Uploading to file.io...")
 
-        fileio_response = requests.post('https://file.io', files=files_payload, timeout=60)
-        fileio_data = fileio_response.json()
+            files_payload = {
+                'file': (archive_name, io.BytesIO(archive_data), 'application/zip')
+            }
 
-        if fileio_data.get('success'):
-            return jsonify({
-                "success": True,
-                "download_url": fileio_data['link'],
-                "file_key": fileio_data['key'],
-                "archive_name": archive_name,
-                "files_count": len(files),
-                "archive_size": len(archive_data),
-                "apartment_id": apartment_id,
-                "expiry": fileio_data.get('expiry', '14 days')
-            })
-        else:
-            # Если file.io не сработал, возвращаем архив напрямую
-            return send_file(
-                io.BytesIO(archive_data),
-                as_attachment=True,
-                download_name=archive_name,
-                mimetype='application/zip'
-            )
+            fileio_response = requests.post('https://file.io', files=files_payload, timeout=60)
+
+            logging.info(f"file.io response status: {fileio_response.status_code}")
+            logging.info(f"file.io response text (first 200 chars): {fileio_response.text[:200]}")
+
+            # Пытаемся распарсить JSON
+            try:
+                fileio_data = fileio_response.json()
+
+                if fileio_data.get('success'):
+                    logging.info(f"file.io upload successful: {fileio_data.get('link')}")
+                    return jsonify({
+                        "success": True,
+                        "download_url": fileio_data['link'],
+                        "file_key": fileio_data.get('key', ''),
+                        "archive_name": archive_name,
+                        "files_count": len(files),
+                        "archive_size": len(archive_data),
+                        "apartment_id": apartment_id,
+                        "expiry": fileio_data.get('expiry', '14 days')
+                    })
+                else:
+                    logging.warning(f"file.io returned success=false: {fileio_data}")
+
+            except Exception as json_error:
+                logging.error(f"Failed to parse file.io JSON response: {json_error}")
+                logging.error(f"Full file.io response: {fileio_response.text}")
+
+        except Exception as upload_error:
+            logging.error(f"Error uploading to file.io: {upload_error}")
+
+        # Если file.io не сработал, возвращаем архив напрямую
+        logging.info("file.io failed, returning archive directly")
+        return send_file(
+            io.BytesIO(archive_data),
+            as_attachment=True,
+            download_name=archive_name,
+            mimetype='application/zip'
+        )
 
     except Exception as e:
         logging.error(f"Error creating archive: {e}")
